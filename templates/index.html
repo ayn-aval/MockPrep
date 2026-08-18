@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-wrapper">
+    <div class="page-header animate-fade-in">
+        <h1>Welcome to MockPrep</h1>
+        <p>Upload PDF question papers, take timed mock tests, and track your performance.</p>
+    </div>
+
+    <!-- Stats Overview -->
+    <div class="stats-grid stagger">
+        <div class="stat-card blue">
+            <span class="stat-label">Total Tests</span>
+            <span class="stat-value">{{ stats.total_tests }}</span>
+            <span class="stat-detail">Tests created</span>
+        </div>
+        <div class="stat-card green">
+            <span class="stat-label">Attempts</span>
+            <span class="stat-value">{{ stats.total_attempts }}</span>
+            <span class="stat-detail">Tests taken</span>
+        </div>
+        <div class="stat-card amber">
+            <span class="stat-label">Avg. Score</span>
+            <span class="stat-value">{{ "%.1f"|format(stats.avg_score) }}%</span>
+            <span class="stat-detail">Overall accuracy</span>
+        </div>
+        <div class="stat-card rose">
+            <span class="stat-label">Best Score</span>
+            <span class="stat-value">{{ "%.1f"|format(stats.best_score) }}%</span>
+            <span class="stat-detail">Your best performance</span>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card animate-slide-up" style="animation-delay: 0.2s; margin-bottom: 2rem;">
+        <div class="card-header">
+            <h2 class="card-title">Quick Actions</h2>
+        </div>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <a href="{{ url_for('upload') }}" class="btn btn-primary btn-lg">
+                📤 Create New Mock Test
+            </a>
+            {% if stats.total_tests > 0 %}
+            <a href="{{ url_for('history') }}" class="btn btn-secondary btn-lg">
+                📊 View Test History
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Recent Tests -->
+    {% if recent_tests %}
+    <div class="card animate-slide-up" style="animation-delay: 0.3s;">
+        <div class="card-header">
+            <h2 class="card-title">Recent Tests</h2>
+            <a href="{{ url_for('history') }}" class="btn btn-ghost btn-sm">View All →</a>
+        </div>
+        <div class="history-list">
+            {% for test in recent_tests %}
+            <div class="history-item">
+                <div>
+                    <div style="font-weight: 600; margin-bottom: 0.25rem;">{{ test.name }}</div>
+                    <div style="font-size: 0.8rem; color: var(--text-muted);">
+                        {{ test.created_at.strftime('%b %d, %Y at %I:%M %p') }}
+                    </div>
+                </div>
+                <div>
+                    <span class="badge badge-blue">{{ test.total_questions }} Q</span>
+                </div>
+                <div>
+                    <span class="badge badge-violet">{{ test.timer_minutes }} min</span>
+                </div>
+                <div>
+                    <span class="badge badge-green">{{ test.attempts|length }} attempts</span>
+                </div>
+                <div>
+                    {% if test.attempts %}
+                        {% set last_attempt = test.attempts[-1] %}
+                        <span style="font-weight: 600; color: var(--accent-emerald);">{{ "%.0f"|format(last_attempt.accuracy_percent) }}%</span>
+                    {% else %}
+                        <span style="color: var(--text-muted);">—</span>
+                    {% endif %}
+                </div>
+                <div style="display: flex; gap: 0.5rem;">
+                    <a href="{{ url_for('start_test', test_id=test.id) }}" class="btn btn-primary btn-sm">Take Test</a>
+                    {% if test.attempts %}
+                    <a href="{{ url_for('report', attempt_id=test.attempts[-1].id) }}" class="btn btn-secondary btn-sm">Report</a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <div class="card animate-slide-up" style="animation-delay: 0.3s;">
+        <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <h3>No tests yet</h3>
+            <p>Upload a PDF question paper to create your first mock test.</p>
+            <a href="{{ url_for('upload') }}" class="btn btn-primary btn-lg">📤 Create Your First Test</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

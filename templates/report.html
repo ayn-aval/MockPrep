@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+{% block title %}Report — {{ attempt.test.name }}{% endblock %}
+
+{% block content %}
+<div class="page-wrapper">
+    <!-- Hero Score Card -->
+    <div class="report-hero animate-scale-in">
+        <svg width="0" height="0" style="position: absolute;">
+            <defs>
+                <linearGradient id="scoreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" style="stop-color:#3b82f6"/>
+                    <stop offset="100%" style="stop-color:#8b5cf6"/>
+                </linearGradient>
+            </defs>
+        </svg>
+
+        <div class="score-circle" id="score-circle">
+            <svg viewBox="0 0 160 160">
+                <circle class="score-bg" cx="80" cy="80" r="70"/>
+                <circle class="score-fill" cx="80" cy="80" r="70"
+                    stroke-dasharray="{{ 2 * 3.14159 * 70 }}"
+                    stroke-dashoffset="{{ 2 * 3.14159 * 70 }}"
+                    id="score-arc"/>
+            </svg>
+            <div class="score-value">
+                <div class="number" id="score-number">{{ "%.1f"|format(attempt.score) }}</div>
+                <div class="label">out of {{ "%.0f"|format(attempt.max_score) }}</div>
+            </div>
+        </div>
+
+        <h2 class="report-title">{{ attempt.test.name }}</h2>
+        <div class="report-meta">
+            <span>📅 {{ attempt.started_at.strftime('%b %d, %Y at %I:%M %p') }}</span>
+            <span>⏱️ {{ "%d"|format(attempt.time_taken_seconds // 60) }}m {{ "%d"|format(attempt.time_taken_seconds % 60) }}s</span>
+            <span>📊 {{ "%.1f"|format(attempt.accuracy_percent) }}% accuracy</span>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="stats-grid stagger">
+        <div class="stat-card green">
+            <span class="stat-label">Correct</span>
+            <span class="stat-value">{{ attempt.total_correct }}</span>
+            <span class="stat-detail">+{{ "%.1f"|format(attempt.test.marks_correct * attempt.total_correct) }} marks</span>
+        </div>
+        <div class="stat-card rose">
+            <span class="stat-label">Wrong</span>
+            <span class="stat-value">{{ attempt.total_wrong }}</span>
+            <span class="stat-detail">{{ "%.1f"|format(attempt.test.marks_wrong * attempt.total_wrong) }} marks</span>
+        </div>
+        <div class="stat-card amber">
+            <span class="stat-label">Skipped</span>
+            <span class="stat-value">{{ attempt.total_skipped }}</span>
+            <span class="stat-detail">0 marks</span>
+        </div>
+        <div class="stat-card blue">
+            <span class="stat-label">Attempted</span>
+            <span class="stat-value">{{ attempt.total_attempted }} / {{ attempt.test.total_questions }}</span>
+            <span class="stat-detail">{{ "%.0f"|format(attempt.total_attempted / attempt.test.total_questions * 100 if attempt.test.total_questions > 0 else 0) }}% attempted</span>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid animate-slide-up" style="animation-delay: 0.3s;">
+        <div class="chart-card">
+            <h3 class="card-title mb-2">📊 Answer Distribution</h3>
+            <canvas id="distribution-chart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3 class="card-title mb-2">📈 Section-wise Performance</h3>
+            <canvas id="section-chart"></canvas>
+        </div>
+    </div>
+
+    <!-- Section Breakdown Table -->
+    {% if section_scores %}
+    <div class="card mb-3 animate-slide-up" style="animation-delay: 0.4s;">
+        <h3 class="card-title mb-2">📋 Section-wise Breakdown</h3>
+        <table class="section-table">
+            <thead>
+                <tr>
+                    <th>Section</th>
+                    <th>Total</th>
+                    <th>Attempted</th>
+                    <th>Correct</th>
+                    <th>Wrong</th>
+                    <th>Score</th>
+                    <th>Accuracy</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for section_name, data in section_scores.items() %}
+                <tr>
+                    <td style="font-weight: 600;">{{ section_name }}</td>
+                    <td>{{ data.total }}</td>
+                    <td>{{ data.attempted }}</td>
+                    <td style="color: var(--accent-emerald);">{{ data.correct }}</td>
+                    <td style="color: var(--accent-rose);">{{ data.wrong }}</td>
+                    <td style="font-weight: 600;">{{ "%.1f"|format(data.score) }}</td>
+                    <td>
+                        <span class="badge {% if data.accuracy >= 70 %}badge-green{% elif data.accuracy >= 40 %}badge-amber{% else %}badge-rose{% endif %}">
+                            {{ "%.0f"|format(data.accuracy) }}%
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Question-by-Question Review -->
+    <div class="card animate-slide-up" style="animation-delay: 0.5s;">
+        <div class="card-header">
+            <h3 class="card-title">🔍 Question-by-Question Review</h3>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-ghost btn-sm" onclick="filterReview('all')" id="filter-all">All</button>
+                <button class="btn btn-ghost btn-sm" onclick="filterReview('correct')" id="filter-correct">✅ Correct</button>
+                <button class="btn btn-ghost btn-sm" onclick="filterReview('wrong')" id="filter-wrong">❌ Wrong</button>
+                <button class="btn btn-ghost btn-sm" onclick="filterReview('skipped')" id="filter-skipped">⏭️ Skipped</button>
+            </div>
+        </div>
+
+        <div class="review-list" id="review-list">
+            {% for item in review_data %}
+            <div class="review-item" data-status="{{ item.status }}">
+                <div class="review-item-header" onclick="toggleReviewItem(this)">
+                    <div class="q-info">
+                        <span style="font-weight: 600; font-size: 0.9rem;">Q{{ item.question_number }}</span>
+                        {% if item.section_name != 'General' %}
+                        <span class="badge badge-violet">{{ item.section_name }}</span>
+                        {% endif %}
+                        <span class="review-status {{ item.status }}">{{ item.status }}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        {% if item.time_spent > 0 %}
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">{{ item.time_spent }}s</span>
+                        {% endif %}
+                        <span class="expand-icon">▼</span>
+                    </div>
+                </div>
+                <div class="review-item-body">
+                    <div class="question-text" style="font-size: 0.95rem; margin-bottom: 1rem;">{{ item.question_text }}</div>
+                    {% if item.question_type == 'text' %}
+                        <!-- Text Answer Review -->
+                        <div class="text-answer-review" style="background: var(--bg-tertiary); padding: 1rem; border-radius: var(--radius-md); border-left: 3px solid {% if item.status == 'correct' %}var(--accent-emerald){% elif item.status == 'wrong' %}var(--accent-rose){% else %}var(--text-muted){% endif %};">
+                            <div style="margin-bottom: 0.5rem;">
+                                <span style="color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Correct Answer</span>
+                                <div style="font-family: monospace; font-size: 1.1rem; color: var(--text-primary); margin-top: 0.2rem;">{{ item.correct_answer }}</div>
+                            </div>
+                            <div>
+                                <span style="color: var(--text-muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.5px;">Your Answer</span>
+                                <div style="font-family: monospace; font-size: 1.1rem; color: {% if item.status == 'correct' %}var(--accent-emerald){% elif item.status == 'wrong' %}var(--accent-rose){% else %}var(--text-muted){% endif %}; margin-top: 0.2rem;">
+                                    {% if item.selected_answer %}{{ item.selected_answer }}{% else %}<em>Skipped</em>{% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    {% else %}
+                        <!-- MCQ Answer Review -->
+                        <div class="options-list" style="margin-bottom: 0;">
+                            {% for opt_label, opt_text in item.options %}
+                                {% if opt_text %}
+                                <div class="option-item {% if opt_label == item.correct_answer %}correct{% elif opt_label == item.selected_answer and item.status == 'wrong' %}wrong{% endif %}" style="cursor: default;">
+                                    <span class="option-label">{{ opt_label }}{% if opt_label == item.correct_answer %} ✓{% endif %}</span>
+                                    <span class="option-text">
+                                        {{ opt_text }}
+                                        {% if opt_label == item.selected_answer and opt_label != item.correct_answer %}
+                                            <span style="color: var(--accent-rose); font-size: 0.8rem; margin-left: 0.5rem;">(Your answer)</span>
+                                        {% elif opt_label == item.selected_answer and opt_label == item.correct_answer %}
+                                            <span style="color: var(--accent-emerald); font-size: 0.8rem; margin-left: 0.5rem;">(Your answer ✓)</span>
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display: flex; justify-content: center; gap: 1rem; margin-top: 2rem; margin-bottom: 2rem;">
+        <a href="{{ url_for('start_test', test_id=attempt.test.id) }}" class="btn btn-primary btn-lg">🔄 Retake Test</a>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary btn-lg">🏠 Dashboard</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ===== Animate Score Circle =====
+document.addEventListener('DOMContentLoaded', () => {
+    const arc = document.getElementById('score-arc');
+    const circumference = 2 * Math.PI * 70;
+    const score = {{ attempt.score }};
+    const maxScore = {{ attempt.max_score }};
+    const percent = maxScore > 0 ? Math.max(0, score / maxScore) : 0;
+    const offset = circumference * (1 - percent);
+
+    setTimeout(() => {
+        arc.style.strokeDashoffset = offset;
+    }, 300);
+
+    // Distribution Chart
+    const distCtx = document.getElementById('distribution-chart').getContext('2d');
+    new Chart(distCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Correct', 'Wrong', 'Skipped'],
+            datasets: [{
+                data: [{{ attempt.total_correct }}, {{ attempt.total_wrong }}, {{ attempt.total_skipped }}],
+                backgroundColor: [
+                    'rgba(16, 185, 129, 0.8)',
+                    'rgba(244, 63, 94, 0.8)',
+                    'rgba(145, 145, 168, 0.4)'
+                ],
+                borderColor: [
+                    'rgba(16, 185, 129, 1)',
+                    'rgba(244, 63, 94, 1)',
+                    'rgba(145, 145, 168, 0.6)'
+                ],
+                borderWidth: 2,
+                hoverOffset: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { color: '#9191a8', padding: 20, font: { family: 'Inter', size: 13 } }
+                }
+            },
+            cutout: '65%'
+        }
+    });
+
+    // Section Chart
+    const sectionScores = {{ section_scores_json|safe }};
+    const sectionNames = Object.keys(sectionScores);
+    const sectionAccuracies = sectionNames.map(s => sectionScores[s].accuracy);
+    const sectionColors = sectionNames.map((_, i) => {
+        const colors = [
+            'rgba(59, 130, 246, 0.7)',
+            'rgba(139, 92, 246, 0.7)',
+            'rgba(16, 185, 129, 0.7)',
+            'rgba(245, 158, 11, 0.7)',
+            'rgba(6, 182, 212, 0.7)',
+            'rgba(244, 63, 94, 0.7)'
+        ];
+        return colors[i % colors.length];
+    });
+
+    const secCtx = document.getElementById('section-chart').getContext('2d');
+    new Chart(secCtx, {
+        type: 'bar',
+        data: {
+            labels: sectionNames,
+            datasets: [{
+                label: 'Accuracy %',
+                data: sectionAccuracies,
+                backgroundColor: sectionColors,
+                borderRadius: 8,
+                borderSkipped: false,
+                barThickness: 40
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: { color: '#9191a8', font: { family: 'Inter' } },
+                    grid: { color: 'rgba(255,255,255,0.05)' }
+                },
+                x: {
+                    ticks: { color: '#9191a8', font: { family: 'Inter', size: 11 } },
+                    grid: { display: false }
+                }
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+});
+
+// ===== Review Filtering =====
+function filterReview(status) {
+    const items = document.querySelectorAll('.review-item');
+    items.forEach(item => {
+        if (status === 'all' || item.dataset.status === status) {
+            item.style.display = '';
+        } else {
+            item.style.display = 'none';
+        }
+    });
+
+    // Update active filter button
+    document.querySelectorAll('[id^="filter-"]').forEach(btn => {
+        btn.style.background = '';
+        btn.style.color = '';
+    });
+    const activeBtn = document.getElementById(`filter-${status}`);
+    if (activeBtn) {
+        activeBtn.style.background = 'var(--bg-glass-hover)';
+        activeBtn.style.color = 'var(--text-primary)';
+    }
+}
+
+function toggleReviewItem(header) {
+    header.parentElement.classList.toggle('expanded');
+}
+</script>
+{% endblock %}

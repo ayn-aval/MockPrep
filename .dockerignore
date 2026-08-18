@@ -1,0 +1,8 @@
+.git
+__pycache__
+instance/
+mock_tests.db
+static/uploads/*
+!static/uploads/.gitkeep
+.env
+venv

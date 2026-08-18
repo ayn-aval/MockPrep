@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Test History{% endblock %}
+
+{% block content %}
+<div class="page-wrapper">
+    <div class="page-header animate-fade-in">
+        <h1>Test History</h1>
+        <p>All your mock tests and attempts at a glance.</p>
+    </div>
+
+    {% if tests %}
+    <div class="animate-slide-up">
+        {% for test in tests %}
+        <div class="card mb-2">
+            <div class="card-header">
+                <div>
+                    <h2 class="card-title">{{ test.name }}</h2>
+                    <p class="card-subtitle">Created {{ test.created_at.strftime('%b %d, %Y at %I:%M %p') }} · {{ test.total_questions }} questions · {{ test.timer_minutes }} min</p>
+                </div>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <a href="{{ url_for('start_test', test_id=test.id) }}" class="btn btn-primary btn-sm">Take Test</a>
+                    <form action="{{ url_for('delete_test', test_id=test.id) }}" method="POST" style="margin: 0; padding: 0;">
+                        <button type="submit" class="btn btn-ghost btn-sm" style="color: var(--accent-rose);" title="Delete Test">🗑️ Delete</button>
+                    </form>
+                </div>
+            </div>
+
+            {% if test.attempts|length > 0 %}
+            <div style="margin-top: 0.5rem;">
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                    {{ test.attempts|length }} attempt(s)
+                </div>
+                {% for attempt in test.attempts|reverse %}
+                <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; background: var(--bg-glass); border-radius: var(--radius-sm); margin-bottom: 0.5rem;">
+                    <div style="display: flex; align-items: center; gap: 1.5rem;">
+                        <span style="font-size: 0.85rem; color: var(--text-secondary);">
+                            {{ attempt.started_at.strftime('%b %d, %Y %I:%M %p') }}
+                        </span>
+                        <span style="font-weight: 700; color: var(--text-primary);">
+                            Score: {{ "%.1f"|format(attempt.score) }} / {{ "%.0f"|format(attempt.max_score) }}
+                        </span>
+                        <span class="badge {% if attempt.accuracy_percent >= 70 %}badge-green{% elif attempt.accuracy_percent >= 40 %}badge-amber{% else %}badge-rose{% endif %}">
+                            {{ "%.0f"|format(attempt.accuracy_percent) }}% accuracy
+                        </span>
+                        <span style="font-size: 0.8rem; color: var(--text-muted);">
+                            ⏱️ {{ "%d"|format(attempt.time_taken_seconds // 60) }}m {{ "%d"|format(attempt.time_taken_seconds % 60) }}s
+                        </span>
+                    </div>
+                    <a href="{{ url_for('report', attempt_id=attempt.id) }}" class="btn btn-secondary btn-sm">View Report</a>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 0.5rem;">No attempts yet</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="empty-state">
+            <div class="empty-icon">📋</div>
+            <h3>No tests found</h3>
+            <p>Upload a PDF to create your first mock test.</p>
+            <a href="{{ url_for('upload') }}" class="btn btn-primary btn-lg">📤 Create Test</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}Preview & Edit{% endblock %}
+
+{% block content %}
+<div class="page-wrapper wide">
+    <div class="page-header animate-fade-in">
+        <h1>Preview & Edit</h1>
+        <p>Review the parsed questions and answer key below. Edit anything that looks incorrect.</p>
+    </div>
+
+    {% if warnings %}
+    <div class="animate-fade-in">
+        {% for warning in warnings %}
+        <div class="alert alert-warning">
+            <span>⚠️</span> {{ warning }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="alert alert-info animate-fade-in">
+        <span>💡</span>
+        Questions without options are automatically marked as <strong>Text/Numerical</strong> type.
+        You can toggle any question between MCQ and Text using the type selector.
+        For math notation, use $ signs (e.g., $\frac{1}{2}$, $x^2$, $\sqrt{3}$).
+    </div>
+
+    <form id="preview-form" action="{{ url_for('save_preview') }}" method="POST">
+        <input type="hidden" name="pdf_path" value="{{ pdf_path }}">
+        <input type="hidden" name="total_questions" id="total-questions" value="{{ questions|length }}">
+
+        <div class="preview-grid animate-slide-up">
+            <!-- Questions Panel -->
+            <div>
+                <div class="card mb-2">
+                    <div class="card-header">
+                        <h2 class="card-title">📋 Parsed Questions ({{ questions|length }})</h2>
+                        <button type="button" class="btn btn-secondary btn-sm" onclick="addQuestion()">+ Add Question</button>
+                    </div>
+                </div>
+
+                <div class="question-preview-list" id="questions-list">
+                    {% for q in questions %}
+                    <div class="question-preview" id="q-{{ loop.index }}">
+                        <div class="q-num" style="display: flex; align-items: center; justify-content: space-between;">
+                            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                <span>Question {{ loop.index }}</span>
+                                <!-- Question Type Badge -->
+                                <select class="form-select" name="q_{{ loop.index }}_type"
+                                        style="width: auto; padding: 0.2rem 1.8rem 0.2rem 0.5rem; font-size: 0.7rem; border-radius: 999px;"
+                                        onchange="toggleQuestionType({{ loop.index }}, this.value)">
+                                    <option value="mcq" {% if q.get('question_type', 'mcq') == 'mcq' %}selected{% endif %}>📝 MCQ</option>
+                                    <option value="text" {% if q.get('question_type') == 'text' %}selected{% endif %}>✏️ Text/Numerical</option>
+                                </select>
+                            </div>
+                            <button type="button" class="btn btn-ghost btn-sm" onclick="toggleEdit({{ loop.index }})" style="font-size: 0.75rem;">✏️ Edit</button>
+                        </div>
+
+                        <!-- Display Mode -->
+                        <div class="q-display" id="display-{{ loop.index }}">
+                            <div class="q-text" style="white-space: pre-wrap;">{{ q.question_text }}</div>
+                            {% if q.get('question_type') != 'text' %}
+                            <div class="q-options" id="options-display-{{ loop.index }}">
+                                {% if q.option_a %}<div class="opt"><strong>A.</strong> {{ q.option_a }}</div>{% endif %}
+                                {% if q.option_b %}<div class="opt"><strong>B.</strong> {{ q.option_b }}</div>{% endif %}
+                                {% if q.option_c %}<div class="opt"><strong>C.</strong> {{ q.option_c }}</div>{% endif %}
+                                {% if q.option_d %}<div class="opt"><strong>D.</strong> {{ q.option_d }}</div>{% endif %}
+                                {% if q.option_e %}<div class="opt"><strong>E.</strong> {{ q.option_e }}</div>{% endif %}
+                            </div>
+                            {% else %}
+                            <div class="q-options" id="options-display-{{ loop.index }}">
+                                <div class="opt" style="color: var(--accent-cyan);">
+                                    <em>✏️ Text/Numerical answer — no options</em>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Edit Mode -->
+                        <div class="q-edit hidden" id="edit-{{ loop.index }}">
+                            <div class="form-group" style="margin-bottom: 0.75rem;">
+                                <label class="form-label" style="font-size: 0.7rem;">Question Text</label>
+                                <textarea class="form-textarea" name="q_{{ loop.index }}_text" rows="3" style="min-height: 60px;">{{ q.question_text }}</textarea>
+                            </div>
+                            <div id="options-edit-{{ loop.index }}" {% if q.get('question_type') == 'text' %}class="hidden"{% endif %}>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                                        <label class="form-label" style="font-size: 0.7rem;">Option A</label>
+                                        <input class="form-input" name="q_{{ loop.index }}_a" value="{{ q.option_a }}">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                                        <label class="form-label" style="font-size: 0.7rem;">Option B</label>
+                                        <input class="form-input" name="q_{{ loop.index }}_b" value="{{ q.option_b }}">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                                        <label class="form-label" style="font-size: 0.7rem;">Option C</label>
+                                        <input class="form-input" name="q_{{ loop.index }}_c" value="{{ q.option_c }}">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                                        <label class="form-label" style="font-size: 0.7rem;">Option D</label>
+                                        <input class="form-input" name="q_{{ loop.index }}_d" value="{{ q.option_d }}">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0.5rem;">
+                                <label class="form-label" style="font-size: 0.7rem;">Section Name (optional)</label>
+                                <input class="form-input" name="q_{{ loop.index }}_section" value="{{ q.get('section_name', 'General') }}" placeholder="e.g., Quantitative Aptitude">
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Answer Key Panel -->
+            <div class="answer-key-panel">
+                <div class="card" style="position: sticky; top: 80px;">
+                    <div class="card-header">
+                        <h2 class="card-title">🔑 Answer Key</h2>
+                    </div>
+
+                    {% if raw_ocr_text %}
+                    <details style="margin-bottom: 1rem;">
+                        <summary style="cursor: pointer; font-size: 0.8rem; color: var(--text-muted);">
+                            📝 Raw OCR Text (click to view)
+                        </summary>
+                        <pre style="margin-top: 0.5rem; padding: 0.75rem; background: var(--bg-tertiary); border-radius: var(--radius-sm); font-size: 0.75rem; color: var(--text-secondary); white-space: pre-wrap; max-height: 200px; overflow-y: auto;">{{ raw_ocr_text }}</pre>
+                    </details>
+                    {% endif %}
+
+                    <p style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+                        For MCQ: enter A-E. For text/numerical: type the answer (e.g., 42, 3/4, 0.75).
+                    </p>
+
+                    <div class="answer-key-list" id="answer-key-list">
+                        {% for i in range(1, questions|length + 1) %}
+                        <div class="answer-key-item" id="key-item-{{ i }}">
+                            <span class="q-label">Q{{ i }}:</span>
+                            <input type="text" name="key_{{ i }}"
+                                   value="{{ answer_key.get(i, '') }}"
+                                   maxlength="{% if questions[i-1].get('question_type') == 'text' %}50{% else %}1{% endif %}"
+                                   class="a-value"
+                                   style="{% if questions[i-1].get('question_type') == 'text' %}width: 60px;{% endif %} text-transform: {% if questions[i-1].get('question_type') != 'text' %}uppercase{% else %}none{% endif %};"
+                                   {% if questions[i-1].get('question_type') != 'text' %}oninput="this.value = this.value.toUpperCase()"{% endif %}>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <div class="mt-2" style="font-size: 0.8rem; color: var(--text-muted);">
+                        <p>{{ answer_key|length }} / {{ questions|length }} answers detected</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 2rem;" class="animate-slide-up">
+            <a href="{{ url_for('upload') }}" class="btn btn-ghost">← Re-upload</a>
+            <button type="submit" class="btn btn-success btn-lg">✅ Confirm & Set Up Test →</button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleEdit(num) {
+    const display = document.getElementById(`display-${num}`);
+    const edit = document.getElementById(`edit-${num}`);
+    display.classList.toggle('hidden');
+    edit.classList.toggle('hidden');
+}
+
+function toggleQuestionType(num, type) {
+    const optionsEdit = document.getElementById(`options-edit-${num}`);
+    const optionsDisplay = document.getElementById(`options-display-${num}`);
+    const keyItem = document.getElementById(`key-item-${num}`);
+    const keyInput = keyItem ? keyItem.querySelector('input') : null;
+
+    if (type === 'text') {
+        // Hide options, show text mode
+        if (optionsEdit) optionsEdit.classList.add('hidden');
+        if (optionsDisplay) {
+            optionsDisplay.innerHTML = '<div class="opt" style="color: var(--accent-cyan);"><em>✏️ Text/Numerical answer — no options</em></div>';
+        }
+        // Update answer key input
+        if (keyInput) {
+            keyInput.maxLength = 50;
+            keyInput.style.width = '60px';
+            keyInput.style.textTransform = 'none';
+            keyInput.oninput = null;
+            keyInput.placeholder = 'Answer';
+        }
+    } else {
+        // Show options, MCQ mode
+        if (optionsEdit) optionsEdit.classList.remove('hidden');
+        // Update answer key input
+        if (keyInput) {
+            keyInput.maxLength = 1;
+            keyInput.style.width = '';
+            keyInput.style.textTransform = 'uppercase';
+            keyInput.oninput = function() { this.value = this.value.toUpperCase(); };
+        }
+    }
+}
+
+function addQuestion() {
+    const list = document.getElementById('questions-list');
+    const totalInput = document.getElementById('total-questions');
+    let total = parseInt(totalInput.value);
+    total++;
+    totalInput.value = total;
+
+    const html = `
+    <div class="question-preview" id="q-${total}">
+        <div class="q-num" style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+                <span>Question ${total} (New)</span>
+                <select class="form-select" name="q_${total}_type"
+                        style="width: auto; padding: 0.2rem 1.8rem 0.2rem 0.5rem; font-size: 0.7rem; border-radius: 999px;"
+                        onchange="toggleQuestionType(${total}, this.value)">
+                    <option value="mcq">📝 MCQ</option>
+                    <option value="text">✏️ Text/Numerical</option>
+                </select>
+            </div>
+        </div>
+        <div class="q-edit">
+            <div class="form-group" style="margin-bottom: 0.75rem;">
+                <label class="form-label" style="font-size: 0.7rem;">Question Text</label>
+                <textarea class="form-textarea" name="q_${total}_text" rows="3" style="min-height: 60px;" placeholder="Enter question text..."></textarea>
+            </div>
+            <div id="options-edit-${total}">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                        <label class="form-label" style="font-size: 0.7rem;">Option A</label>
+                        <input class="form-input" name="q_${total}_a" placeholder="Option A">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                        <label class="form-label" style="font-size: 0.7rem;">Option B</label>
+                        <input class="form-input" name="q_${total}_b" placeholder="Option B">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                        <label class="form-label" style="font-size: 0.7rem;">Option C</label>
+                        <input class="form-input" name="q_${total}_c" placeholder="Option C">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0.5rem;">
+                        <label class="form-label" style="font-size: 0.7rem;">Option D</label>
+                        <input class="form-input" name="q_${total}_d" placeholder="Option D">
+                    </div>
+                </div>
+            </div>
+            <div class="form-group" style="margin-bottom: 0.5rem;">
+                <label class="form-label" style="font-size: 0.7rem;">Section Name (optional)</label>
+                <input class="form-input" name="q_${total}_section" placeholder="e.g., Quantitative Aptitude">
+            </div>
+        </div>
+    </div>`;
+    list.insertAdjacentHTML('beforeend', html);
+
+    // Add answer key entry
+    const keyList = document.getElementById('answer-key-list');
+    keyList.insertAdjacentHTML('beforeend', `
+        <div class="answer-key-item" id="key-item-${total}">
+            <span class="q-label">Q${total}:</span>
+            <input type="text" name="key_${total}" value="" maxlength="1" class="a-value" style="text-transform: uppercase;" oninput="this.value = this.value.toUpperCase()">
+        </div>
+    `);
+
+    document.getElementById(`q-${total}`).scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+{% endblock %}

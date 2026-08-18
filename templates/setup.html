@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Test Setup{% endblock %}
+
+{% block content %}
+<div class="page-wrapper" style="max-width: 700px;">
+    <div class="page-header animate-fade-in">
+        <h1>Set Up Your Test</h1>
+        <p>Configure timer, test name, and scoring options before starting.</p>
+    </div>
+
+    <form action="{{ url_for('create_test') }}" method="POST" class="animate-slide-up">
+        <input type="hidden" name="questions_json" value='{{ questions_json }}'>
+
+        <div class="card mb-2">
+            <h2 class="card-title mb-2">📝 Test Details</h2>
+
+            <div class="form-group">
+                <label class="form-label" for="test-name">Test Name</label>
+                <input type="text" class="form-input" id="test-name" name="test_name" 
+                       placeholder="e.g., CAT Mock Test 1, VARC Practice Set" required
+                       value="{{ suggested_name }}">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label" for="timer">Timer Duration</label>
+                <select class="form-select" id="timer" name="timer_minutes">
+                    <option value="10">10 Minutes</option>
+                    <option value="15">15 Minutes</option>
+                    <option value="20">20 Minutes</option>
+                    <option value="30">30 Minutes</option>
+                    <option value="45">45 Minutes</option>
+                    <option value="60" selected>60 Minutes (1 Hour)</option>
+                    <option value="90">90 Minutes (1.5 Hours)</option>
+                    <option value="120">120 Minutes (2 Hours)</option>
+                    <option value="150">150 Minutes (2.5 Hours)</option>
+                    <option value="180">180 Minutes (3 Hours)</option>
+                    <option value="custom">Custom...</option>
+                </select>
+                <div class="hidden mt-1" id="custom-timer-group">
+                    <input type="number" class="form-input" id="custom-timer" name="custom_timer" 
+                           min="1" max="300" placeholder="Enter minutes (1-300)">
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-2">
+            <h2 class="card-title mb-2">⚡ Scoring</h2>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label class="form-label">Marks per correct answer</label>
+                    <input type="number" class="form-input" name="marks_correct" value="1" min="0" step="0.25">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Negative marking per wrong answer</label>
+                    <input type="number" class="form-input" name="marks_wrong" value="-1" max="0" step="0.25">
+                </div>
+            </div>
+
+            <label class="form-check">
+                <input type="checkbox" name="negative_marking" checked>
+                <span style="color: var(--text-secondary); font-size: 0.9rem;">Enable negative marking</span>
+            </label>
+        </div>
+
+        <div class="card mb-2">
+            <h2 class="card-title mb-2">📊 Summary</h2>
+            <div class="stats-grid" style="margin-bottom: 0;">
+                <div class="stat-card blue">
+                    <span class="stat-label">Questions</span>
+                    <span class="stat-value">{{ total_questions }}</span>
+                </div>
+                <div class="stat-card green">
+                    <span class="stat-label">Sections</span>
+                    <span class="stat-value">{{ sections|length }}</span>
+                    <span class="stat-detail">{{ sections|join(', ') if sections else 'General' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="text-center mt-3">
+            <button type="submit" class="btn btn-success btn-lg">
+                🚀 Create Test & Start
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('timer').addEventListener('change', function() {
+    const customGroup = document.getElementById('custom-timer-group');
+    if (this.value === 'custom') {
+        customGroup.classList.remove('hidden');
+        document.getElementById('custom-timer').focus();
+    } else {
+        customGroup.classList.add('hidden');
+    }
+});
+</script>
+{% endblock %}

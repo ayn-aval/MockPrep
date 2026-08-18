@@ -1,0 +1,428 @@
+{% extends "base.html" %}
+{% block title %}{{ test.name }}{% endblock %}
+
+{% block content %}
+<div class="test-container">
+    <!-- Main Test Area -->
+    <div class="test-main">
+        <!-- Timer Bar -->
+        <div class="timer-bar" id="timer-bar">
+            <div>
+                <div class="timer-display" id="timer-display">{{ "%02d"|format(test.timer_minutes // 60) }}:{{ "%02d"|format(test.timer_minutes % 60) }}:00</div>
+            </div>
+            <div class="timer-info">
+                <span id="questions-answered-count">0</span> / {{ questions|length }} answered
+                <span style="margin-left: 0.5rem;" class="badge badge-violet">{{ test.name }}</span>
+            </div>
+        </div>
+
+        <!-- Question Display -->
+        <div class="question-card" id="question-card">
+            <div class="question-header">
+                <span class="question-number" id="question-number">Question 1 of {{ questions|length }}</span>
+                <span class="question-section-badge" id="question-section"></span>
+            </div>
+
+            <div class="question-text" id="question-text"></div>
+
+            <div class="options-list" id="options-list">
+                <!-- Options rendered dynamically -->
+            </div>
+
+            <div class="question-actions">
+                <div class="question-actions-left">
+                    <button class="btn btn-secondary btn-sm" id="btn-clear" onclick="clearResponse()">
+                        🗑️ Clear
+                    </button>
+                    <button class="btn btn-secondary btn-sm" id="btn-review" onclick="markForReview()">
+                        🔖 Mark for Review
+                    </button>
+                </div>
+                <div class="question-actions-right">
+                    <button class="btn btn-ghost" id="btn-prev" onclick="prevQuestion()">← Previous</button>
+                    <button class="btn btn-primary" id="btn-next" onclick="nextQuestion()">Next →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="test-sidebar" id="test-sidebar">
+        <div class="nav-panel">
+            <div class="nav-panel-title">Question Navigation</div>
+            <div class="nav-grid" id="nav-grid">
+                {% for q in questions %}
+                <button class="nav-btn not-visited" data-q="{{ loop.index0 }}" onclick="goToQuestion({{ loop.index0 }})">
+                    {{ loop.index }}
+                </button>
+                {% endfor %}
+            </div>
+
+            <div class="nav-legend">
+                <div class="legend-item"><span class="legend-dot current"></span> Current</div>
+                <div class="legend-item"><span class="legend-dot answered"></span> Answered</div>
+                <div class="legend-item"><span class="legend-dot review"></span> Marked for Review</div>
+                <div class="legend-item"><span class="legend-dot not-answered"></span> Not Visited</div>
+            </div>
+
+            <div class="submit-section">
+                <button class="btn btn-danger" style="width: 100%;" onclick="confirmSubmit()">
+                    📤 Submit Test
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Submit Confirmation Modal -->
+<div class="modal-backdrop" id="submit-modal">
+    <div class="modal">
+        <h3 class="modal-title">Submit Test?</h3>
+        <div class="modal-body" id="submit-modal-body">
+            <!-- Populated dynamically -->
+        </div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeModal()">Continue Test</button>
+            <button class="btn btn-danger" onclick="submitTest()">Submit Now</button>
+        </div>
+    </div>
+</div>
+
+<!-- Hidden form for submission -->
+<form id="submit-form" action="{{ url_for('submit_test') }}" method="POST" style="display:none;">
+    <input type="hidden" name="test_id" value="{{ test.id }}">
+    <input type="hidden" name="attempt_id" value="{{ attempt.id }}">
+    <input type="hidden" name="answers_json" id="answers-json">
+    <input type="hidden" name="time_taken" id="time-taken">
+    <input type="hidden" name="question_times_json" id="question-times-json">
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ===== Test Data =====
+const questions = {{ questions_json|safe }};
+const totalTime = {{ test.timer_minutes }} * 60; // seconds
+let currentQuestion = 0;
+let answers = {};       // { questionIndex: 'A'|'B'|'C'|'D'|'E' or 'text answer' }
+let reviewed = {};      // { questionIndex: true }
+let questionTimes = {}; // { questionIndex: seconds }
+let lastTimestamp = Date.now();
+let remainingTime = totalTime;
+let timerInterval;
+
+// Helper: check if question has MCQ options
+function isTextQuestion(q) {
+    return q.question_type === 'text' || (!q.option_a && !q.option_b && !q.option_c && !q.option_d);
+}
+
+// Helper: render math in a container using KaTeX auto-render
+function renderMath(el) {
+    if (typeof renderMathInElement === 'function') {
+        renderMathInElement(el, {
+            delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '\\[', right: '\\]', display: true}
+            ],
+            throwOnError: false
+        });
+    }
+}
+
+// ===== Initialize =====
+document.addEventListener('DOMContentLoaded', () => {
+    renderQuestion(0);
+    startTimer();
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        const q = questions[currentQuestion];
+        if (!isTextQuestion(q)) {
+            switch(e.key) {
+                case '1': case 'a': case 'A': selectOption('A'); return;
+                case '2': case 'b': case 'B': selectOption('B'); return;
+                case '3': case 'c': case 'C': selectOption('C'); return;
+                case '4': case 'd': case 'D': selectOption('D'); return;
+                case '5': case 'e': case 'E': selectOption('E'); return;
+            }
+        }
+
+        switch(e.key) {
+            case 'ArrowRight': nextQuestion(); break;
+            case 'ArrowLeft': prevQuestion(); break;
+        }
+    });
+});
+
+// ===== Timer =====
+function startTimer() {
+    timerInterval = setInterval(() => {
+        remainingTime--;
+
+        if (remainingTime <= 0) {
+            clearInterval(timerInterval);
+            autoSubmit();
+            return;
+        }
+
+        updateTimerDisplay();
+    }, 1000);
+}
+
+function updateTimerDisplay() {
+    const hours = Math.floor(remainingTime / 3600);
+    const mins = Math.floor((remainingTime % 3600) / 60);
+    const secs = remainingTime % 60;
+
+    const display = document.getElementById('timer-display');
+    display.textContent = `${String(hours).padStart(2,'0')}:${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
+
+    // Color warnings
+    display.classList.remove('warning', 'danger');
+    if (remainingTime <= 60) {
+        display.classList.add('danger');
+    } else if (remainingTime <= 300) {
+        display.classList.add('warning');
+    }
+}
+
+// ===== Question Rendering =====
+function renderQuestion(index) {
+    // Track time spent on previous question
+    trackTime();
+
+    currentQuestion = index;
+    lastTimestamp = Date.now();
+
+    const q = questions[index];
+
+    document.getElementById('question-number').textContent = `Question ${index + 1} of ${questions.length}`;
+    document.getElementById('question-section').textContent = q.section_name || '';
+
+    // Use innerHTML to preserve math symbols and special characters
+    const qTextEl = document.getElementById('question-text');
+    qTextEl.textContent = q.question_text;  // Set as text first (safe)
+
+    // Render options area
+    const optionsList = document.getElementById('options-list');
+    optionsList.innerHTML = '';
+
+    if (isTextQuestion(q)) {
+        // ===== TEXT/NUMERICAL ANSWER =====
+        const textDiv = document.createElement('div');
+        textDiv.className = 'text-answer-container';
+        textDiv.innerHTML = `
+            <label class="form-label" style="color: var(--text-secondary); margin-bottom: 0.5rem;">
+                ✏️ Type your answer below
+            </label>
+            <input type="text" class="form-input text-answer-input" id="text-answer-input"
+                   placeholder="Enter your answer (number, text, fraction...)"
+                   value="${answers[index] || ''}"
+                   oninput="saveTextAnswer(this.value)"
+                   autocomplete="off">
+            <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
+                For fractions use / (e.g., 3/4). For powers use ^ (e.g., 2^3).
+            </p>
+        `;
+        optionsList.appendChild(textDiv);
+
+        // Focus the input
+        setTimeout(() => {
+            const input = document.getElementById('text-answer-input');
+            if (input) input.focus();
+        }, 100);
+    } else {
+        // ===== MCQ OPTIONS =====
+        const optionLabels = ['A', 'B', 'C', 'D', 'E'];
+        const optionKeys = ['option_a', 'option_b', 'option_c', 'option_d', 'option_e'];
+
+        optionKeys.forEach((key, i) => {
+            if (q[key]) {
+                const label = optionLabels[i];
+                const isSelected = answers[index] === label;
+
+                const div = document.createElement('div');
+                div.className = `option-item${isSelected ? ' selected' : ''}`;
+                div.onclick = () => selectOption(label);
+                div.innerHTML = `
+                    <span class="option-label">${label}</span>
+                    <span class="option-text">${escapeHtml(q[key])}</span>
+                `;
+                optionsList.appendChild(div);
+            }
+        });
+    }
+
+    // Render math in the question and options
+    renderMath(document.getElementById('question-card'));
+
+    // Update nav buttons
+    document.getElementById('btn-prev').disabled = index === 0;
+    document.getElementById('btn-next').textContent = index === questions.length - 1 ? 'Finish →' : 'Next →';
+
+    // Update nav grid
+    updateNavGrid();
+
+    // Update review button text
+    const reviewBtn = document.getElementById('btn-review');
+    reviewBtn.textContent = reviewed[index] ? '🔖 Unmark Review' : '🔖 Mark for Review';
+}
+
+// Escape HTML to prevent XSS in option text
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function saveTextAnswer(value) {
+    if (value.trim()) {
+        answers[currentQuestion] = value.trim();
+    } else {
+        delete answers[currentQuestion];
+    }
+    updateAnsweredCount();
+    updateNavGrid();
+}
+
+function selectOption(label) {
+    const q = questions[currentQuestion];
+    if (isTextQuestion(q)) return;  // Don't select options for text questions
+
+    if (answers[currentQuestion] === label) {
+        delete answers[currentQuestion];
+    } else {
+        answers[currentQuestion] = label;
+    }
+    renderQuestion(currentQuestion);
+    updateAnsweredCount();
+}
+
+function clearResponse() {
+    delete answers[currentQuestion];
+    renderQuestion(currentQuestion);
+    updateAnsweredCount();
+}
+
+function markForReview() {
+    reviewed[currentQuestion] = !reviewed[currentQuestion];
+    renderQuestion(currentQuestion);
+}
+
+function nextQuestion() {
+    if (currentQuestion < questions.length - 1) {
+        renderQuestion(currentQuestion + 1);
+    }
+}
+
+function prevQuestion() {
+    if (currentQuestion > 0) {
+        renderQuestion(currentQuestion - 1);
+    }
+}
+
+function goToQuestion(index) {
+    renderQuestion(index);
+}
+
+// ===== Navigation Grid =====
+function updateNavGrid() {
+    const buttons = document.querySelectorAll('.nav-btn');
+    buttons.forEach((btn, i) => {
+        btn.className = 'nav-btn';
+        if (i === currentQuestion) {
+            btn.classList.add('current');
+        } else if (answers[i] !== undefined && answers[i] !== '') {
+            btn.classList.add('answered');
+        } else if (reviewed[i]) {
+            btn.classList.add('review');
+        } else {
+            btn.classList.add('not-visited');
+        }
+
+        if (reviewed[i] && i !== currentQuestion) {
+            btn.classList.add('review');
+        }
+    });
+}
+
+function updateAnsweredCount() {
+    const count = Object.values(answers).filter(v => v !== undefined && v !== '').length;
+    document.getElementById('questions-answered-count').textContent = count;
+}
+
+// ===== Time Tracking =====
+function trackTime() {
+    const elapsed = (Date.now() - lastTimestamp) / 1000;
+    if (!questionTimes[currentQuestion]) questionTimes[currentQuestion] = 0;
+    questionTimes[currentQuestion] += elapsed;
+}
+
+// ===== Submission =====
+function confirmSubmit() {
+    const answered = Object.values(answers).filter(v => v !== undefined && v !== '').length;
+    const unanswered = questions.length - answered;
+    const markedReview = Object.values(reviewed).filter(v => v).length;
+
+    document.getElementById('submit-modal-body').innerHTML = `
+        <p>Are you sure you want to submit?</p>
+        <div class="stats-grid" style="margin-top: 1rem; margin-bottom: 0;">
+            <div class="stat-card green" style="padding: 1rem;">
+                <span class="stat-label">Answered</span>
+                <span class="stat-value" style="font-size: 1.5rem;">${answered}</span>
+            </div>
+            <div class="stat-card rose" style="padding: 1rem;">
+                <span class="stat-label">Unanswered</span>
+                <span class="stat-value" style="font-size: 1.5rem;">${unanswered}</span>
+            </div>
+            <div class="stat-card amber" style="padding: 1rem;">
+                <span class="stat-label">Marked for Review</span>
+                <span class="stat-value" style="font-size: 1.5rem;">${markedReview}</span>
+            </div>
+        </div>
+    `;
+
+    document.getElementById('submit-modal').classList.add('active');
+}
+
+function closeModal() {
+    document.getElementById('submit-modal').classList.remove('active');
+}
+
+function submitTest() {
+    trackTime();
+
+    document.getElementById('answers-json').value = JSON.stringify(answers);
+    document.getElementById('time-taken').value = totalTime - remainingTime;
+    document.getElementById('question-times-json').value = JSON.stringify(questionTimes);
+
+    clearInterval(timerInterval);
+    document.getElementById('submit-form').submit();
+}
+
+function autoSubmit() {
+    trackTime();
+
+    document.getElementById('answers-json').value = JSON.stringify(answers);
+    document.getElementById('time-taken').value = totalTime;
+    document.getElementById('question-times-json').value = JSON.stringify(questionTimes);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'loading-overlay';
+    overlay.innerHTML = '<div class="spinner"></div><p class="loading-text">⏰ Time\'s up! Submitting your test...</p>';
+    document.body.appendChild(overlay);
+
+    document.getElementById('submit-form').submit();
+}
+
+// Warn before leaving page
+window.addEventListener('beforeunload', (e) => {
+    e.preventDefault();
+    e.returnValue = '';
+});
+</script>
+{% endblock %}

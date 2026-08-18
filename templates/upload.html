@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Upload{% endblock %}
+
+{% block content %}
+<div class="page-wrapper">
+    <div class="page-header animate-fade-in">
+        <h1>Create New Mock Test</h1>
+        <p>Upload your PDF question paper and answer key to get started.</p>
+    </div>
+
+    <form id="upload-form" action="{{ url_for('upload_files') }}" method="POST" enctype="multipart/form-data">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;" class="animate-slide-up">
+            <!-- PDF Upload -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">📄 Question Paper (PDF)</h2>
+                    <span class="badge badge-blue">Required</span>
+                </div>
+                <div class="upload-zone" id="pdf-drop-zone" data-target="pdf-input">
+                    <span class="upload-icon">📄</span>
+                    <p class="upload-text">
+                        Drag & drop your PDF here or <span class="highlight">browse</span>
+                    </p>
+                    <p class="upload-hint">Supports all question formats — max 50MB</p>
+                    <input type="file" name="pdf_file" id="pdf-input" accept=".pdf" hidden required>
+                    <div class="file-selected hidden" id="pdf-file-info">
+                        <span>📄</span>
+                        <span class="file-name" id="pdf-file-name"></span>
+                        <span class="file-size" id="pdf-file-size"></span>
+                        <span class="remove-file" onclick="removeFile('pdf')">✕</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Answer Key Upload -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">🔑 Answer Key (Image)</h2>
+                    <span class="badge badge-blue">Required</span>
+                </div>
+                <div class="upload-zone" id="key-drop-zone" data-target="key-input">
+                    <span class="upload-icon">🖼️</span>
+                    <p class="upload-text">
+                        Drag & drop your answer key image or <span class="highlight">browse</span>
+                    </p>
+                    <p class="upload-hint">PNG, JPG — screenshot or photo of answer key</p>
+                    <input type="file" name="key_file" id="key-input" accept=".png,.jpg,.jpeg" hidden required>
+                    <div class="file-selected hidden" id="key-file-info">
+                        <span>🖼️</span>
+                        <span class="file-name" id="key-file-name"></span>
+                        <span class="file-size" id="key-file-size"></span>
+                        <span class="remove-file" onclick="removeFile('key')">✕</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Submit -->
+        <div class="text-center mt-3 animate-slide-up" style="animation-delay: 0.2s;">
+            <button type="submit" class="btn btn-primary btn-lg" id="upload-btn">
+                🚀 Upload & Parse
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Loading Overlay -->
+<div class="loading-overlay hidden" id="loading-overlay">
+    <div class="spinner"></div>
+    <p class="loading-text" id="loading-text">Parsing your PDF...</p>
+    <p style="color: var(--text-muted); font-size: 0.85rem;">This may take a moment for scanned documents</p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // Drag and drop setup
+    const dropZones = document.querySelectorAll('.upload-zone');
+
+    dropZones.forEach(zone => {
+        const targetId = zone.dataset.target;
+        const input = document.getElementById(targetId);
+
+        zone.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('remove-file') && e.target.tagName !== 'SPAN') {
+                input.click();
+            } else if (e.target.classList.contains('upload-icon') || 
+                       e.target.classList.contains('upload-text') ||
+                       e.target.classList.contains('upload-hint') ||
+                       e.target.classList.contains('highlight') ||
+                       e.target === zone) {
+                input.click();
+            }
+        });
+
+        ['dragenter', 'dragover'].forEach(event => {
+            zone.addEventListener(event, (e) => {
+                e.preventDefault();
+                zone.classList.add('dragover');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(event => {
+            zone.addEventListener(event, (e) => {
+                e.preventDefault();
+                zone.classList.remove('dragover');
+            });
+        });
+
+        zone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                input.files = files;
+                showFileInfo(targetId === 'pdf-input' ? 'pdf' : 'key', files[0]);
+            }
+        });
+
+        input.addEventListener('change', () => {
+            if (input.files.length > 0) {
+                showFileInfo(targetId === 'pdf-input' ? 'pdf' : 'key', input.files[0]);
+            }
+        });
+    });
+
+    // Form submission
+    document.getElementById('upload-form').addEventListener('submit', (e) => {
+        const pdfInput = document.getElementById('pdf-input');
+        const keyInput = document.getElementById('key-input');
+
+        if (!pdfInput.files.length || !keyInput.files.length) {
+            e.preventDefault();
+            alert('Please upload both a PDF question paper and an answer key image.');
+            return;
+        }
+
+        document.getElementById('loading-overlay').classList.remove('hidden');
+    });
+});
+
+function showFileInfo(type, file) {
+    const infoEl = document.getElementById(`${type}-file-info`);
+    const nameEl = document.getElementById(`${type}-file-name`);
+    const sizeEl = document.getElementById(`${type}-file-size`);
+
+    nameEl.textContent = file.name;
+    sizeEl.textContent = formatFileSize(file.size);
+    infoEl.classList.remove('hidden');
+}
+
+function removeFile(type) {
+    const input = document.getElementById(type === 'pdf' ? 'pdf-input' : 'key-input');
+    const infoEl = document.getElementById(`${type}-file-info`);
+    input.value = '';
+    infoEl.classList.add('hidden');
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+</script>
+{% endblock %}
