@@ -4,5 +4,6 @@ PyMuPDF==1.25.3
 pytesseract==0.3.13
 opencv-python-headless
 numpy
+pdf2image
 Pillow==11.3.0
 gunicorn==23.0.0
