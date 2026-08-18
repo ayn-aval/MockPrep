@@ -28,7 +28,10 @@ def create_app():
     # Initialize database
     db.init_app(app)
     with app.app_context():
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception as e:
+            print(f"Skipping db.create_all() due to: {e}")
 
     return app
 
