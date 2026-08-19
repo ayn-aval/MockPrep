@@ -203,9 +203,23 @@ function renderQuestion(index) {
     document.getElementById('question-number').textContent = `Question ${index + 1} of ${questions.length}`;
     document.getElementById('question-section').textContent = q.section_name || '';
 
-    // Use innerHTML to preserve math symbols and special characters
+    // Render question image(s) if present
     const qTextEl = document.getElementById('question-text');
-    qTextEl.textContent = q.question_text;  // Set as text first (safe)
+    let imageHtml = '';
+    if (q.question_image) {
+        const imagePaths = q.question_image.split(',');
+        imagePaths.forEach(imgPath => {
+            if (imgPath.trim()) {
+                imageHtml += `<img src="/static/${imgPath.trim()}" class="question-image" alt="Question figure">`;
+            }
+        });
+    }
+
+    // Use innerHTML to preserve math symbols and special characters
+    qTextEl.innerHTML = imageHtml;
+    const textSpan = document.createElement('span');
+    textSpan.textContent = q.question_text;
+    qTextEl.appendChild(textSpan);
 
     // Render options area
     const optionsList = document.getElementById('options-list');

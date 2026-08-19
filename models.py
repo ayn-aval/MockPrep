@@ -50,6 +50,7 @@ class Question(db.Model):
     option_d = db.Column(db.Text, default='')
     option_e = db.Column(db.Text, default='')  # Some exams have 5 options
     correct_answer = db.Column(db.Text, default='')  # A-E for MCQ, or text/number for text type
+    question_image = db.Column(db.Text, default='')  # Relative path to extracted image from PDF
     section_name = db.Column(db.String(100), default='General')
 
     answers = db.relationship('UserAnswer', backref='question', lazy=True,
@@ -68,6 +69,7 @@ class Question(db.Model):
             'option_e': self.option_e,
             'correct_answer': self.correct_answer,
             'section_name': self.section_name,
+            'question_image': self.question_image or '',
         }
 
     def __repr__(self):

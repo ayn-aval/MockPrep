@@ -140,6 +140,15 @@
                     </div>
                 </div>
                 <div class="review-item-body">
+                    {% if item.question_image %}
+                    <div class="q-images" style="margin-bottom: 0.75rem;">
+                        {% for img_path in item.question_image.split(',') %}
+                            {% if img_path.strip() %}
+                            <img src="{{ url_for('static', filename=img_path.strip()) }}" class="question-image" alt="Question figure">
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                     <div class="question-text" style="font-size: 0.95rem; margin-bottom: 1rem;">{{ item.question_text }}</div>
                     {% if item.question_type == 'text' %}
                         <!-- Text Answer Review -->

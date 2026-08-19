@@ -14,7 +14,10 @@ from flask import (
 from werkzeug.utils import secure_filename
 from config import Config
 from models import db, MockTest, Question, TestAttempt, UserAnswer
-from parsers.pdf_parser import extract_text_from_pdf, parse_questions, assign_sections_to_questions
+from parsers.pdf_parser import (
+    extract_text_from_pdf, extract_text_and_images_from_pdf,
+    parse_questions, assign_sections_to_questions, assign_images_to_questions
+)
 from parsers.answer_key_parser import extract_answer_key, validate_answer_key
 
 
@@ -154,8 +157,10 @@ def upload_files():
     key_file.save(key_path)
 
     try:
-        # Parse PDF
-        text = extract_text_from_pdf(pdf_path)
+        # Parse PDF — extract text AND images
+        text, page_boundaries, page_images = extract_text_and_images_from_pdf(
+            pdf_path, app.config['UPLOAD_FOLDER']
+        )
         questions = parse_questions(text)
 
         if not questions:
@@ -165,11 +170,17 @@ def upload_files():
         # Assign sections if detected
         questions = assign_sections_to_questions(questions, text)
 
+        # Assign extracted images to questions based on page mapping
+        questions = assign_images_to_questions(questions, text, page_boundaries, page_images)
+
         # Parse answer key
         answer_key, raw_ocr_text = extract_answer_key(key_path)
 
         # Validate answer key
         warnings = validate_answer_key(answer_key, len(questions))
+
+        # Count images extracted
+        total_images = sum(len(imgs) for imgs in page_images.values())
 
         # Store on disk for preview
         temp_data = {
@@ -181,7 +192,8 @@ def upload_files():
         }
         save_temp_data(temp_data)
 
-        flash(f'Successfully parsed {len(questions)} questions and {len(answer_key)} answers!', 'success')
+        img_msg = f" and {total_images} image(s)" if total_images > 0 else ""
+        flash(f'Successfully parsed {len(questions)} questions, {len(answer_key)} answers{img_msg}!', 'success')
         return redirect(url_for('preview'))
 
     except Exception as e:
@@ -246,6 +258,7 @@ def save_preview():
             'option_d': opt_d,
             'option_e': opt_e,
             'section_name': request.form.get(f'q_{i}_section', 'General').strip() or 'General',
+            'question_image': request.form.get(f'q_{i}_image', '').strip(),
         })
 
         # Answer key: for MCQ it's A-E, for text it can be any value
@@ -347,6 +360,7 @@ def create_test():
             option_e=q_data.get('option_e', ''),
             correct_answer=q_data.get('correct_answer', ''),
             section_name=q_data.get('section_name', 'General'),
+            question_image=q_data.get('question_image', ''),
         )
         db.session.add(question)
 
@@ -511,6 +525,7 @@ def report(attempt_id):
             'question_number': q.question_number,
             'question_text': q.question_text,
             'question_type': q.question_type or 'mcq',
+            'question_image': q.question_image or '',
             'section_name': q.section_name,
             'correct_answer': q.correct_answer,
             'selected_answer': selected,

@@ -58,6 +58,15 @@
 
                         <!-- Display Mode -->
                         <div class="q-display" id="display-{{ loop.index }}">
+                            {% if q.get('question_image') %}
+                            <div class="q-images">
+                                {% for img_path in q.get('question_image', '').split(',') %}
+                                    {% if img_path.strip() %}
+                                    <img src="{{ url_for('static', filename=img_path.strip()) }}" class="question-image" alt="Question figure">
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
                             <div class="q-text" style="white-space: pre-wrap;">{{ q.question_text }}</div>
                             {% if q.get('question_type') != 'text' %}
                             <div class="q-options" id="options-display-{{ loop.index }}">
@@ -75,6 +84,7 @@
                             </div>
                             {% endif %}
                         </div>
+                        <input type="hidden" name="q_{{ loop.index }}_image" value="{{ q.get('question_image', '') }}">
 
                         <!-- Edit Mode -->
                         <div class="q-edit hidden" id="edit-{{ loop.index }}">

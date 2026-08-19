@@ -78,6 +78,9 @@ def normalize_math_text(text):
 
     return text
 
+import os
+from PIL import Image
+
 
 def extract_text_from_pdf(pdf_path):
     """
@@ -109,6 +112,101 @@ def extract_text_from_pdf(pdf_path):
     return full_text
 
 
+def extract_images_from_pdf(pdf_path, upload_folder):
+    """
+    Extract embedded images from each page of a PDF using PyMuPDF.
+    Saves images to upload_folder and returns a dict mapping page_number -> [image_paths].
+    Only extracts images above a minimum size to filter out icons/decorations.
+    """
+    page_images = {}
+    doc = fitz.open(pdf_path)
+    timestamp = os.path.basename(pdf_path).split('_')[0]  # reuse timestamp from filename
+
+    for page_num in range(len(doc)):
+        page = doc.load_page(page_num)
+        image_list = page.get_images(full=True)
+
+        if not image_list:
+            continue
+
+        page_imgs = []
+        for img_idx, img_info in enumerate(image_list):
+            xref = img_info[0]
+            try:
+                base_image = doc.extract_image(xref)
+                if not base_image:
+                    continue
+
+                image_bytes = base_image["image"]
+                image_ext = base_image.get("ext", "png")
+                width = base_image.get("width", 0)
+                height = base_image.get("height", 0)
+
+                # Skip tiny images (icons, bullets, decorations)
+                if width < 50 or height < 50:
+                    continue
+
+                # Save the image
+                img_filename = f"{timestamp}_page{page_num + 1}_img{img_idx + 1}.{image_ext}"
+                img_path = os.path.join(upload_folder, img_filename)
+
+                with open(img_path, "wb") as f:
+                    f.write(image_bytes)
+
+                # Store relative path for web serving
+                relative_path = f"uploads/{img_filename}"
+                page_imgs.append(relative_path)
+
+            except Exception as e:
+                print(f"Failed to extract image {img_idx} from page {page_num}: {e}")
+                continue
+
+        if page_imgs:
+            page_images[page_num] = page_imgs
+
+    doc.close()
+    return page_images
+
+
+def extract_text_and_images_from_pdf(pdf_path, upload_folder):
+    """
+    Combined extraction: text per page + images per page.
+    Returns (full_text, page_texts, page_images).
+    - full_text: merged text from all pages
+    - page_texts: list of (page_num, text) tuples with character offsets
+    - page_images: dict mapping page_num -> [relative_image_paths]
+    """
+    doc = fitz.open(pdf_path)
+    pages_text = []
+    page_boundaries = []  # (page_num, start_offset, end_offset)
+
+    offset = 0
+    for page_num in range(len(doc)):
+        page = doc.load_page(page_num)
+        text = page.get_text("text")
+        start = offset
+        pages_text.append(text)
+        offset += len(text) + 1  # +1 for the \n join separator
+        page_boundaries.append((page_num, start, offset - 1))
+
+    doc.close()
+
+    full_text = "\n".join(pages_text)
+
+    # If too little text, fall back to OCR
+    if len(full_text.strip()) < 50:
+        full_text = extract_text_ocr(pdf_path)
+        # With OCR, we can't reliably map pages, so put everything on page 0
+        page_boundaries = [(0, 0, len(full_text))]
+
+    full_text = normalize_math_text(full_text)
+
+    # Extract images
+    page_images = extract_images_from_pdf(pdf_path, upload_folder)
+
+    return full_text, page_boundaries, page_images
+
+
 def extract_text_ocr(pdf_path):
     """Extract text from PDF using OCR (pdf2image + pytesseract)."""
     try:
@@ -122,6 +220,7 @@ def extract_text_ocr(pdf_path):
     except Exception as e:
         print(f"OCR extraction failed: {e}")
         return ""
+
 
 
 def parse_questions(text):
@@ -387,5 +486,42 @@ def assign_sections_to_questions(questions, text):
             for i, q in enumerate(questions):
                 section_idx = min(i // questions_per_section, len(sections) - 1)
                 q['section_name'] = sections[section_idx]['name']
+
+    return questions
+
+
+def assign_images_to_questions(questions, text, page_boundaries, page_images):
+    """
+    Assign extracted images to questions based on which PDF page the question came from.
+    Uses page_boundaries to determine the page for each question's text position,
+    then looks up images from page_images dict.
+    
+    Args:
+        questions: list of question dicts (must have 'question_text')
+        text: the full extracted text
+        page_boundaries: list of (page_num, start_offset, end_offset)
+        page_images: dict mapping page_num -> [relative_image_paths]
+    """
+    if not page_images or not page_boundaries:
+        return questions
+
+    for q in questions:
+        q_text = q.get('question_text', '')
+        if not q_text:
+            continue
+
+        # Find where this question's text starts in the full text
+        q_pos = text.find(q_text[:min(60, len(q_text))])  # match first 60 chars
+        if q_pos == -1:
+            continue
+
+        # Determine which page this position falls on
+        for page_num, start, end in page_boundaries:
+            if start <= q_pos <= end:
+                # Assign all images from this page to this question
+                if page_num in page_images:
+                    # Join multiple image paths with comma separator
+                    q['question_image'] = ','.join(page_images[page_num])
+                break
 
     return questions
